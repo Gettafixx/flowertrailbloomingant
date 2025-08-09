@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion Reactive Flower Garden</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #videoCanvas, #motionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+
+        #videoCanvas {
+            opacity: 0.3;
+            filter: grayscale(100%);
+        }
+
+        #motionCanvas {
+            pointer-events: none;
+        }
+
+        #flowersContainer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+        }
+
+        .flower {
+            position: absolute;
+            pointer-events: none;
+            animation: bloom 0.5s ease-out forwards;
+            transform-origin: center bottom;
+        }
+
+        @keyframes bloom {
+            0% {
+                transform: scale(0) rotate(0deg);
+                opacity: 0;
+            }
+            50% {
+                opacity: 1;
+            }
+            100% {
+                transform: scale(1) rotate(360deg);
+                opacity: 0.9;
+            }
+        }
+
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: scale(0.5) rotate(180deg);
+            }
+        }
+
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            transition: all 0.3s ease;
+            max-width: 300px;
+        }
+
+        #controls.hidden {
+            transform: translateX(350px);
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e0e0e0;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a6f);
+            cursor: pointer;
+        }
+
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .value-display {
+            display: inline-block;
+            font-size: 11px;
+            color: #666;
+            margin-left: 5px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        #hideUIBtn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 999;
+            background: linear-gradient(45deg, #f093fb, #f5576c);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        body:not(.ui-hidden) #hideUIBtn {
+            opacity: 0;
+        }
+
+        body.ui-hidden #hideUIBtn {
+            opacity: 1;
+        }
+
+        .mirrored {
+            transform: scaleX(-1);
+        }
+    </style>
+</head>
+<body>
+    <video id="video" style="display: none;"></video>
+    <canvas id="videoCanvas"></canvas>
+    <canvas id="motionCanvas"></canvas>
+    <div id="flowersContainer"></div>
+
+    <button id="hideUIBtn" onclick="toggleUI()">Show Controls</button>
+
+    <div id="controls">
+        <div class="control-group">
+            <label>Motion Sensitivity <span class="value-display" id="sensitivityValue">30</span></label>
+            <input type="range" id="sensitivity" min="10" max="100" value="30">
+        </div>
+
+        <div class="control-group">
+            <label>Flower Lifetime <span class="value-display" id="lifetimeValue">3.0s</span></label>
+            <input type="range" id="lifetime" min="0.5" max="10" value="3" step="0.5">
+        </div>
+
+        <div class="control-group">
+            <label>Flower Size <span class="value-display" id="sizeValue">50px</span></label>
+            <input type="range" id="flowerSize" min="20" max="150" value="50">
+        </div>
+
+        <div class="control-group">
+            <label>Detection Density <span class="value-display" id="densityValue">20px</span></label>
+            <input type="range" id="density" min="10" max="50" value="20">
+        </div>
+
+        <div class="control-group">
+            <label>Background Color</label>
+            <input type="color" id="bgColor" value="#000000">
+        </div>
+
+        <div class="button-group">
+            <button onclick="toggleMirror()">Mirror</button>
+            <button onclick="toggleUI()">Hide UI</button>
+            <button onclick="toggleFullscreen()">Fullscreen</button>
+        </div>
+    </div>
+
+    <script>
+        // Flower SVG templates
+        const flowerSVGs = [
+            // Daisy
+            `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <g transform="translate(50,50)">
+                    <circle cx="0" cy="-15" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="15" cy="0" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="0" cy="15" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="-15" cy="0" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="10" cy="-10" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="10" cy="10" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="-10" cy="10" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="-10" cy="-10" r="8" fill="#FFE5B4" opacity="0.9"/>
+                    <circle cx="0" cy="0" r="10" fill="#FFD700"/>
+                </g>
+            </svg>`,
+            // Rose
+            `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <g transform="translate(50,50)">
+                    <ellipse cx="0" cy="-12" rx="15" ry="20" fill="#FF69B4" opacity="0.8" transform="rotate(0)"/>
+                    <ellipse cx="0" cy="-12" rx="15" ry="20" fill="#FF1493" opacity="0.8" transform="rotate(72)"/>
+                    <ellipse cx="0" cy="-12" rx="15" ry="20" fill="#FF69B4" opacity="0.8" transform="rotate(144)"/>
+                    <ellipse cx="0" cy="-12" rx="15" ry="20" fill="#FF1493" opacity="0.8" transform="rotate(216)"/>
+                    <ellipse cx="0" cy="-12" rx="15" ry="20" fill="#FF69B4" opacity="0.8" transform="rotate(288)"/>
+                    <circle cx="0" cy="0" r="8" fill="#FFB6C1"/>
+                </g>
+            </svg>`,
+            // Sunflower
+            `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <g transform="translate(50,50)">
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFD700" opacity="0.9"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFA500" opacity="0.9" transform="rotate(30)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFD700" opacity="0.9" transform="rotate(60)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFA500" opacity="0.9" transform="rotate(90)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFD700" opacity="0.9" transform="rotate(120)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFA500" opacity="0.9" transform="rotate(150)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFD700" opacity="0.9" transform="rotate(180)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFA500" opacity="0.9" transform="rotate(210)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFD700" opacity="0.9" transform="rotate(240)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFA500" opacity="0.9" transform="rotate(270)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFD700" opacity="0.9" transform="rotate(300)"/>
+                    <path d="M0,-20 L5,-10 L0,0 L-5,-10 Z" fill="#FFA500" opacity="0.9" transform="rotate(330)"/>
+                    <circle cx="0" cy="0" r="12" fill="#8B4513"/>
+                </g>
+            </svg>`,
+            // Tulip
+            `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <g transform="translate(50,50)">
+                    <path d="M0,-25 Q-10,-15 -8,0 L8,0 Q10,-15 0,-25" fill="#FF6347" opacity="0.9"/>
+                    <path d="M-8,0 Q-12,-10 -20,-5 Q-15,5 -8,0" fill="#FF7F50" opacity="0.8"/>
+                    <path d="M8,0 Q12,-10 20,-5 Q15,5 8,0" fill="#FF7F50" opacity="0.8"/>
+                    <ellipse cx="0" cy="5" rx="6" ry="3" fill="#FFB6C1"/>
+                </g>
+            </svg>`,
+            // Lotus
+            `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <g transform="translate(50,50)">
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFB6C1" opacity="0.8" transform="rotate(0)"/>
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFC0CB" opacity="0.8" transform="rotate(45)"/>
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFB6C1" opacity="0.8" transform="rotate(90)"/>
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFC0CB" opacity="0.8" transform="rotate(135)"/>
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFB6C1" opacity="0.8" transform="rotate(180)"/>
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFC0CB" opacity="0.8" transform="rotate(225)"/>
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFB6C1" opacity="0.8" transform="rotate(270)"/>
+                    <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFC0CB" opacity="0.8" transform="rotate(315)"/>
+                    <circle cx="0" cy="0" r="10" fill="#FFFACD"/>
+                </g>
+            </svg>`
+        ];
+
+        let video, videoCanvas, videoCtx, motionCanvas, motionCtx;
+        let previousFrame = null;
+        let isMirrored = false;
+
+        // Initialize
+        async function init() {
+            video = document.getElementById('video');
+            videoCanvas = document.getElementById('videoCanvas');
+            videoCtx = videoCanvas.getContext('2d');
+            motionCanvas = document.getElementById('motionCanvas');
+            motionCtx = motionCanvas.getContext('2d');
+
+            // Set canvas sizes
+            function resizeCanvases() {
+                videoCanvas.width = window.innerWidth;
+                videoCanvas.height = window.innerHeight;
+                motionCanvas.width = window.innerWidth;
+                motionCanvas.height = window.innerHeight;
+            }
+            resizeCanvases();
+            window.addEventListener('resize', resizeCanvases);
+
+            // Get webcam
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                video.srcObject = stream;
+                video.play();
+                video.addEventListener('loadedmetadata', () => {
+                    detectMotion();
+                });
+            } catch (error) {
+                alert('Please allow camera access to use this application.');
+            }
+
+            // Setup controls
+            setupControls();
+        }
+
+        function setupControls() {
+            // Sensitivity
+            const sensitivity = document.getElementById('sensitivity');
+            sensitivity.addEventListener('input', (e) => {
+                document.getElementById('sensitivityValue').textContent = e.target.value;
+            });
+
+            // Lifetime
+            const lifetime = document.getElementById('lifetime');
+            lifetime.addEventListener('input', (e) => {
+                document.getElementById('lifetimeValue').textContent = e.target.value + 's';
+            });
+
+            // Flower size
+            const flowerSize = document.getElementById('flowerSize');
+            flowerSize.addEventListener('input', (e) => {
+                document.getElementById('sizeValue').textContent = e.target.value + 'px';
+            });
+
+            // Density
+            const density = document.getElementById('density');
+            density.addEventListener('input', (e) => {
+                document.getElementById('densityValue').textContent = e.target.value + 'px';
+            });
+
+            // Background color
+            const bgColor = document.getElementById('bgColor');
+            bgColor.addEventListener('input', (e) => {
+                document.body.style.background = e.target.value;
+            });
+        }
+
+        function detectMotion() {
+            const width = videoCanvas.width;
+            const height = videoCanvas.height;
+            
+            // Draw video frame
+            videoCtx.save();
+            if (isMirrored) {
+                videoCtx.scale(-1, 1);
+                videoCtx.drawImage(video, -width, 0, width, height);
+            } else {
+                videoCtx.drawImage(video, 0, 0, width, height);
+            }
+            videoCtx.restore();
+
+            const currentFrame = videoCtx.getImageData(0, 0, width, height);
+            
+            if (previousFrame) {
+                const sensitivity = parseInt(document.getElementById('sensitivity').value);
+                const density = parseInt(document.getElementById('density').value);
+                
+                // Clear motion canvas
+                motionCtx.clearRect(0, 0, width, height);
+                
+                // Detect motion in grid
+                for (let y = 0; y < height; y += density) {
+                    for (let x = 0; x < width; x += density) {
+                        const index = (y * width + x) * 4;
+                        
+                        const rDiff = Math.abs(currentFrame.data[index] - previousFrame.data[index]);
+                        const gDiff = Math.abs(currentFrame.data[index + 1] - previousFrame.data[index + 1]);
+                        const bDiff = Math.abs(currentFrame.data[index + 2] - previousFrame.data[index + 2]);
+                        
+                        const totalDiff = rDiff + gDiff + bDiff;
+                        
+                        if (totalDiff > sensitivity) {
+                            // Motion detected - spawn flower
+                            spawnFlower(x, y);
+                        }
+                    }
+                }
+            }
+            
+            previousFrame = currentFrame;
+            requestAnimationFrame(detectMotion);
+        }
+
+        function spawnFlower(x, y) {
+            const container = document.getElementById('flowersContainer');
+            const flower = document.createElement('div');
+            flower.className = 'flower';
+            
+            const size = parseInt(document.getElementById('flowerSize').value);
+            const lifetime = parseFloat(document.getElementById('lifetime').value) * 1000;
+            
+            // Random flower type
+            const flowerType = Math.floor(Math.random() * flowerSVGs.length);
+            flower.innerHTML = flowerSVGs[flowerType];
+            
+            // Position and size
+            flower.style.left = (x - size/2) + 'px';
+            flower.style.top = (y - size/2) + 'px';
+            flower.style.width = size + 'px';
+            flower.style.height = size + 'px';
+            
+            // Add random rotation
+            flower.style.transform = `rotate(${Math.random() * 360}deg)`;
+            
+            container.appendChild(flower);
+            
+            // Remove after lifetime
+            setTimeout(() => {
+                flower.style.animation = 'fadeOut 0.5s ease-out forwards';
+                setTimeout(() => {
+                    flower.remove();
+                }, 500);
+            }, lifetime);
+        }
+
+        function toggleMirror() {
+            isMirrored = !isMirrored;
+            const videoCanvas = document.getElementById('videoCanvas');
+            videoCanvas.classList.toggle('mirrored');
+        }
+
+        function toggleUI() {
+            const controls = document.getElementById('controls');
+            const hideBtn = document.getElementById('hideUIBtn');
+            controls.classList.toggle('hidden');
+            document.body.classList.toggle('ui-hidden');
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

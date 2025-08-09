@@ -29,6 +29,11 @@
         #videoCanvas {
             opacity: 0.3;
             filter: grayscale(100%);
+            transition: opacity 0.3s ease;
+        }
+
+        #videoCanvas.hidden {
+            opacity: 0;
         }
 
         #motionCanvas {
@@ -47,8 +52,15 @@
         .flower {
             position: absolute;
             pointer-events: none;
-            animation: bloom 0.5s ease-out forwards;
-            transform-origin: center bottom;
+            transform-origin: center center;
+        }
+
+        .flower.blooming {
+            animation: bloom 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .flower.wilting {
+            animation: wilt 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
 
         @keyframes bloom {
@@ -56,19 +68,28 @@
                 transform: scale(0) rotate(0deg);
                 opacity: 0;
             }
-            50% {
-                opacity: 1;
+            60% {
+                transform: scale(1.1) rotate(15deg);
+                opacity: 0.9;
             }
             100% {
-                transform: scale(1) rotate(360deg);
-                opacity: 0.9;
+                transform: scale(1) rotate(25deg);
+                opacity: 1;
             }
         }
 
-        @keyframes fadeOut {
-            to {
+        @keyframes wilt {
+            0% {
+                transform: scale(1) rotate(25deg);
+                opacity: 1;
+            }
+            40% {
+                transform: scale(1.05) rotate(35deg);
+                opacity: 0.8;
+            }
+            100% {
+                transform: scale(0) rotate(45deg);
                 opacity: 0;
-                transform: scale(0.5) rotate(180deg);
             }
         }
 
@@ -82,7 +103,7 @@
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
             z-index: 1000;
             transition: all 0.3s ease;
-            max-width: 300px;
+            max-width: 320px;
         }
 
         #controls.hidden {
@@ -103,6 +124,14 @@
             letter-spacing: 0.5px;
         }
 
+        .label-hint {
+            font-size: 10px;
+            color: #888;
+            text-transform: none;
+            letter-spacing: 0;
+            margin-top: 2px;
+        }
+
         input[type="range"] {
             width: 100%;
             height: 6px;
@@ -119,6 +148,15 @@
             border-radius: 50%;
             background: linear-gradient(45deg, #ff6b6b, #ee5a6f);
             cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #ff6b6b, #ee5a6f);
+            cursor: pointer;
+            border: none;
         }
 
         input[type="color"] {
@@ -140,10 +178,12 @@
             display: flex;
             gap: 10px;
             margin-top: 20px;
+            flex-wrap: wrap;
         }
 
         button {
             flex: 1;
+            min-width: 80px;
             padding: 10px;
             border: none;
             border-radius: 8px;
@@ -162,6 +202,10 @@
 
         button:active {
             transform: translateY(0);
+        }
+
+        button.active {
+            background: linear-gradient(45deg, #f093fb, #f5576c);
         }
 
         #hideUIBtn {
@@ -189,7 +233,7 @@
 </head>
 <body>
     <video id="video" style="display: none;"></video>
-    <canvas id="videoCanvas"></canvas>
+    <canvas id="videoCanvas" class="mirrored"></canvas>
     <canvas id="motionCanvas"></canvas>
     <div id="flowersContainer"></div>
 
@@ -197,8 +241,11 @@
 
     <div id="controls">
         <div class="control-group">
-            <label>Motion Sensitivity <span class="value-display" id="sensitivityValue">30</span></label>
-            <input type="range" id="sensitivity" min="10" max="100" value="30">
+            <label>
+                Motion Threshold <span class="value-display" id="sensitivityValue">100</span>
+                <div class="label-hint">Higher = more motion needed</div>
+            </label>
+            <input type="range" id="sensitivity" min="50" max="200" value="100">
         </div>
 
         <div class="control-group">
@@ -207,13 +254,21 @@
         </div>
 
         <div class="control-group">
-            <label>Flower Size <span class="value-display" id="sizeValue">50px</span></label>
-            <input type="range" id="flowerSize" min="20" max="150" value="50">
+            <label>Flower Size <span class="value-display" id="sizeValue">60px</span></label>
+            <input type="range" id="flowerSize" min="30" max="150" value="60">
         </div>
 
         <div class="control-group">
-            <label>Detection Density <span class="value-display" id="densityValue">20px</span></label>
-            <input type="range" id="density" min="10" max="50" value="20">
+            <label>
+                Detection Grid <span class="value-display" id="densityValue">30px</span>
+                <div class="label-hint">Smaller = more precise</div>
+            </label>
+            <input type="range" id="density" min="20" max="60" value="30" step="5">
+        </div>
+
+        <div class="control-group">
+            <label>Spawn Rate <span class="value-display" id="spawnRateValue">30%</span></label>
+            <input type="range" id="spawnRate" min="10" max="100" value="30" step="10">
         </div>
 
         <div class="control-group">
@@ -222,7 +277,8 @@
         </div>
 
         <div class="button-group">
-            <button onclick="toggleMirror()">Mirror</button>
+            <button id="cameraToggle" onclick="toggleCamera()">Hide Camera</button>
+            <button id="mirrorToggle" onclick="toggleMirror()" class="active">Mirrored</button>
             <button onclick="toggleUI()">Hide UI</button>
             <button onclick="toggleFullscreen()">Fullscreen</button>
         </div>
@@ -296,12 +352,25 @@
                     <ellipse cx="0" cy="-10" rx="8" ry="20" fill="#FFC0CB" opacity="0.8" transform="rotate(315)"/>
                     <circle cx="0" cy="0" r="10" fill="#FFFACD"/>
                 </g>
+            </svg>`,
+            // Cherry Blossom
+            `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <g transform="translate(50,50)">
+                    <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#FFB7C5" opacity="0.9" transform="rotate(0)"/>
+                    <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#FFC0CB" opacity="0.9" transform="rotate(72)"/>
+                    <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#FFB7C5" opacity="0.9" transform="rotate(144)"/>
+                    <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#FFC0CB" opacity="0.9" transform="rotate(216)"/>
+                    <ellipse cx="0" cy="-15" rx="10" ry="15" fill="#FFB7C5" opacity="0.9" transform="rotate(288)"/>
+                    <circle cx="0" cy="0" r="5" fill="#FFFF99"/>
+                </g>
             </svg>`
         ];
 
         let video, videoCanvas, videoCtx, motionCanvas, motionCtx;
         let previousFrame = null;
-        let isMirrored = false;
+        let isMirrored = true;  // Start mirrored by default
+        let cameraVisible = true;
+        let motionAccumulator = {};  // Track motion over time
 
         // Initialize
         async function init() {
@@ -367,6 +436,12 @@
                 document.getElementById('densityValue').textContent = e.target.value + 'px';
             });
 
+            // Spawn rate
+            const spawnRate = document.getElementById('spawnRate');
+            spawnRate.addEventListener('input', (e) => {
+                document.getElementById('spawnRateValue').textContent = e.target.value + '%';
+            });
+
             // Background color
             const bgColor = document.getElementById('bgColor');
             bgColor.addEventListener('input', (e) => {
@@ -393,24 +468,59 @@
             if (previousFrame) {
                 const sensitivity = parseInt(document.getElementById('sensitivity').value);
                 const density = parseInt(document.getElementById('density').value);
+                const spawnRate = parseInt(document.getElementById('spawnRate').value) / 100;
                 
                 // Clear motion canvas
                 motionCtx.clearRect(0, 0, width, height);
                 
+                // Decay motion accumulator
+                for (let key in motionAccumulator) {
+                    motionAccumulator[key] *= 0.9;
+                    if (motionAccumulator[key] < 10) {
+                        delete motionAccumulator[key];
+                    }
+                }
+                
                 // Detect motion in grid
-                for (let y = 0; y < height; y += density) {
-                    for (let x = 0; x < width; x += density) {
-                        const index = (y * width + x) * 4;
+                for (let y = density; y < height - density; y += density) {
+                    for (let x = density; x < width - density; x += density) {
+                        let totalMotion = 0;
+                        let samples = 0;
                         
-                        const rDiff = Math.abs(currentFrame.data[index] - previousFrame.data[index]);
-                        const gDiff = Math.abs(currentFrame.data[index + 1] - previousFrame.data[index + 1]);
-                        const bDiff = Math.abs(currentFrame.data[index + 2] - previousFrame.data[index + 2]);
+                        // Sample multiple pixels in area for better motion detection
+                        for (let dy = -5; dy <= 5; dy += 5) {
+                            for (let dx = -5; dx <= 5; dx += 5) {
+                                const px = x + dx;
+                                const py = y + dy;
+                                if (px >= 0 && px < width && py >= 0 && py < height) {
+                                    const index = (py * width + px) * 4;
+                                    
+                                    const rDiff = Math.abs(currentFrame.data[index] - previousFrame.data[index]);
+                                    const gDiff = Math.abs(currentFrame.data[index + 1] - previousFrame.data[index + 1]);
+                                    const bDiff = Math.abs(currentFrame.data[index + 2] - previousFrame.data[index + 2]);
+                                    
+                                    totalMotion += (rDiff + gDiff + bDiff);
+                                    samples++;
+                                }
+                            }
+                        }
                         
-                        const totalDiff = rDiff + gDiff + bDiff;
+                        const avgMotion = totalMotion / samples;
+                        const key = `${x}_${y}`;
                         
-                        if (totalDiff > sensitivity) {
-                            // Motion detected - spawn flower
+                        // Accumulate motion over time
+                        if (!motionAccumulator[key]) {
+                            motionAccumulator[key] = 0;
+                        }
+                        
+                        if (avgMotion > sensitivity / 2) {
+                            motionAccumulator[key] += avgMotion;
+                        }
+                        
+                        // Only spawn flower if accumulated motion exceeds threshold
+                        if (motionAccumulator[key] > sensitivity * 3 && Math.random() < spawnRate) {
                             spawnFlower(x, y);
+                            motionAccumulator[key] = 0;  // Reset after spawning
                         }
                     }
                 }
@@ -423,7 +533,7 @@
         function spawnFlower(x, y) {
             const container = document.getElementById('flowersContainer');
             const flower = document.createElement('div');
-            flower.className = 'flower';
+            flower.className = 'flower blooming';
             
             const size = parseInt(document.getElementById('flowerSize').value);
             const lifetime = parseFloat(document.getElementById('lifetime').value) * 1000;
@@ -432,30 +542,52 @@
             const flowerType = Math.floor(Math.random() * flowerSVGs.length);
             flower.innerHTML = flowerSVGs[flowerType];
             
-            // Position and size
-            flower.style.left = (x - size/2) + 'px';
-            flower.style.top = (y - size/2) + 'px';
+            // Position and size with some randomness
+            const offsetX = (Math.random() - 0.5) * 20;
+            const offsetY = (Math.random() - 0.5) * 20;
+            flower.style.left = (x - size/2 + offsetX) + 'px';
+            flower.style.top = (y - size/2 + offsetY) + 'px';
             flower.style.width = size + 'px';
             flower.style.height = size + 'px';
-            
-            // Add random rotation
-            flower.style.transform = `rotate(${Math.random() * 360}deg)`;
             
             container.appendChild(flower);
             
             // Remove after lifetime
             setTimeout(() => {
-                flower.style.animation = 'fadeOut 0.5s ease-out forwards';
+                flower.classList.remove('blooming');
+                flower.classList.add('wilting');
                 setTimeout(() => {
                     flower.remove();
-                }, 500);
+                }, 800);
             }, lifetime);
+        }
+
+        function toggleCamera() {
+            cameraVisible = !cameraVisible;
+            const videoCanvas = document.getElementById('videoCanvas');
+            const btn = document.getElementById('cameraToggle');
+            
+            if (cameraVisible) {
+                videoCanvas.classList.remove('hidden');
+                btn.textContent = 'Hide Camera';
+            } else {
+                videoCanvas.classList.add('hidden');
+                btn.textContent = 'Show Camera';
+            }
         }
 
         function toggleMirror() {
             isMirrored = !isMirrored;
             const videoCanvas = document.getElementById('videoCanvas');
-            videoCanvas.classList.toggle('mirrored');
+            const btn = document.getElementById('mirrorToggle');
+            
+            if (isMirrored) {
+                videoCanvas.classList.add('mirrored');
+                btn.classList.add('active');
+            } else {
+                videoCanvas.classList.remove('mirrored');
+                btn.classList.remove('active');
+            }
         }
 
         function toggleUI() {
